@@ -10,7 +10,7 @@ FETCHER = {
     "vehicle_pos_url": "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl",
     
     # Poll interval in seconds
-    "poll_interval": 2,
+    "poll_interval": 5,
     
     # Output directory for CSV logs
     "output_dir": "data",
@@ -27,7 +27,7 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 3,
+    "duration_sec": 5,
     "width_px": 3840,
     "height_px": 3840,
     "trail_seconds": 3600,
