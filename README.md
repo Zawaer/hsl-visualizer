@@ -1,38 +1,71 @@
-HSL vehicle visualizer
+# HSL Vehicle Visualizer
 
-Renderer supports an optional map (tile) basemap background.
+A tool to create animated videos of Helsinki (HSL) public transport vehicles with fading trails overlaid on a map background.
 
-Install basemap deps:
+## What it does
 
-	pip install -r requirements.txt
+1. **Fetcher** (`fetcher.py`): Polls the HSL GTFS-RT API every 5 seconds to continuously log vehicle positions (buses, trams, metro) to CSV.
+2. **Renderer** (`renderer.py`): Reads CSV data and generates an animation showing each vehicle's movement with fading trails. Renders to PNG frames, then encodes to MP4.
 
-Or (minimum for basemap only):
+## How it works
 
-	pip install contextily pyproj
+- Each vehicle gets a unique color (deterministic, same color across frames).
+- Older trail positions fade over time (configurable duration).
+- Latest position highlighted with a dot.
+- Optional background map tiles (CartoDB, OpenStreetMap) with auto-zoom.
+- Parallel rendering for speed (~10 fps on M3 MacBook Air).
 
-Example render with basemap:
+## Setup
 
-	python3 renderer.py --input data.csv --outdir frames --basemap --basemap_provider cartodb_positron --basemap_zoom 12
+```bash
+pip install -r requirements.txt
+```
 
-Keep framing fixed to Helsinki+Espoo and ignore outlier GPS points:
+## Usage
 
-	python3 renderer.py --input data --outdir frames --basemap --region helsinki_espoo --filter_outside_bbox
+Edit the `CONFIG` dict at the top of `renderer.py` to set:
+- Input/output paths
+- Resolution, duration, FPS, trail fade time
+- Region (Helsinki+Espoo preset or custom bbox)
+- Basemap provider & opacity
+- Video encoding settings
 
-Or set an explicit bbox (min_lon max_lon min_lat max_lat):
+Then run:
+```bash
+python3 renderer.py
+```
 
-	python3 renderer.py --input data --outdir frames --basemap --bbox 24.30 25.35 60.05 60.35 --filter_outside_bbox
+Done—MP4 output in `output.mp4` (or whatever you set in `CONFIG`).
 
-FFmpeg:
+## Configuration highlights
 
-	ffmpeg -y -framerate 25 -i frames/frame_%05d.png -c:v libx264 -pix_fmt yuv420p -crf 18 output.mp4
+```python
+CONFIG = {
+    "input_path": "data",              # CSV directory or single file
+    "output_dir": "frames",            # Frame output directory
+    "fps": 25,
+    "duration_sec": 30,
+    "width_px": 1080,
+    "height_px": 1080,
+    "use_region": True,                # Crop to preset region?
+    "region_name": "helsinki_espoo",   # or define custom in 'regions'
+    "use_basemap": True,               # Background map tiles
+    "encode_video": True,              # Auto-encode to MP4?
+    ...
+}
+```
 
-One-shot render + encode (requires `ffmpeg` installed):
+## Fetcher
 
-	python3 renderer.py --input data --outdir frames --basemap --region helsinki_espoo --filter_outside_bbox --video --video_out output.mp4 --video_overwrite
+Logs vehicle positions continuously:
+```bash
+python3 fetcher.py
+```
 
-Notes on auto-encoding:
-- Good for convenience/repeatability.
-- Kept optional because it adds an external dependency (`ffmpeg`) and you may want to re-encode with different settings without re-rendering.
+Outputs daily CSVs to `data/` (one per day by default).
 
-If you see `NotOpenSSLWarning` from `urllib3` on macOS, it's usually because you're using the system Python linked against LibreSSL.
-This repo pins `urllib3<2` in requirements to avoid that warning. Best long-term fix is using a Homebrew or python.org Python (OpenSSL).
+## Notes
+
+- No line IDs or vehicle type detection in first version.
+- Basemap tiles require `contextily` and `pyproj` (included in `requirements.txt`).
+- FFmpeg required for video encoding.
