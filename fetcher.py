@@ -14,7 +14,7 @@ from google.transit import gtfs_realtime_pb2
 VEHICLE_POS_URL = "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl"
 
 # Poll interval in seconds
-POLL_INTERVAL = 5
+POLL_INTERVAL = 3
 
 # Output directory
 OUT_DIR = "data"

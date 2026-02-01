@@ -5,9 +5,10 @@
 
 import os
 import math
-import argparse
 import signal
 import time
+import shutil
+import subprocess
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -29,53 +30,89 @@ except Exception:  # optional dependency
 
 plt.rcParams['figure.dpi'] = 100
 
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--input", required=True, help="CSV file or directory with CSVs.")
-    p.add_argument("--outdir", default="frames", help="Directory to write frame PNGs.")
-    p.add_argument("--fps", type=int, default=25, help="Frames per second.")
-    p.add_argument("--duration", type=int, default=30, help="Video duration in seconds.")
-    p.add_argument("--width", type=int, default=1080, help="Frame width in px.")
-    p.add_argument("--height", type=int, default=1080, help="Frame height in px.")
-    p.add_argument("--trail_seconds", type=int, default=3600, help="Trail fade duration (s).")
-    p.add_argument("--bg_color", default="#0a0a0f", help="Background color.")
-    p.add_argument("--point_size", type=float, default=6.0)
-    p.add_argument("--workers", type=int, default=cpu_count(), help="Number of parallel workers.")
+# ============================================================================
+# CONFIG: Tweak these constants to change defaults without CLI args
+# ============================================================================
 
-    # Framing / cropping
-    p.add_argument(
-        "--region",
-        default="auto",
-        choices=["auto", "helsinki_espoo"],
-        help="Fixed map framing preset. Use 'helsinki_espoo' to ignore outlier GPS points.",
-    )
-    p.add_argument(
-        "--bbox",
-        nargs=4,
-        type=float,
-        metavar=("MIN_LON", "MAX_LON", "MIN_LAT", "MAX_LAT"),
-        help="Override framing with an explicit lon/lat bounding box.",
-    )
-    p.add_argument(
-        "--filter_outside_bbox",
-        action="store_true",
-        help="Drop points outside bbox/region (recommended if you have bad GPS outliers).",
-    )
+CONFIG = {
+    # ========== Input/Output ==========
+    "input_path": "data",  # CSV file or directory with CSVs
+    "output_dir": "frames",  # Directory to write frame PNGs
+    
+    # ========== Rendering params ==========
+    "fps": 25,
+    "duration_sec": 5,
+    "width_px": 2160,
+    "height_px": 2160,
+    "trail_seconds": 3600,
+    "bg_color": "#0a0a0f",
+    "point_size": 6.0,
+    "num_workers": 7,
+    
+    # ========== Framing / Region ==========
+    "use_region": True,  # Use a preset region or auto-bounds?
+    "region_name": "helsinki_espoo",  # "helsinki_espoo" or define custom in 'regions'
+    "regions": {
+        "helsinki_espoo": (24.6, 25.2, 60.12, 60.34),  # min_lon, max_lon, min_lat, max_lat
+    },
+    "filter_outside_region": True,  # Drop GPS points outside region?
+    
+    # ========== Basemap (background map tiles) ==========
+    "use_basemap": True,  # Enable background tiles?
+    "basemap_provider": "cartodb_positron",  # "cartodb_positron", "cartodb_darkmatter", "osm"
+    "basemap_alpha": 0.8,  # Opacity: 0.0 (transparent) to 1.0 (opaque)
+    "basemap_interpolation": "bilinear",  # "nearest", "bilinear", "bicubic"
+    "basemap_zoom": "auto",  # "auto" to pick based on resolution, or explicit int (e.g., 14)
+    "basemap_prefetch_timeout": 90,  # Max seconds waiting for tiles before fallback
+    
+    # ========== Video encoding ==========
+    "encode_video": True,  # Automatically encode MP4 after rendering?
+    "video_output_path": "output.mp4",  # Output MP4 file
+    "video_crf": 18,  # Quality: lower=better (0-51), typical 18-28
+    "video_preset": "medium",  # Speed: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+    "video_overwrite": True,  # Overwrite output MP4 if it exists?
+    "cleanup_frames": False,  # Delete PNG frames after successful video encode?
+}
 
-    # Optional map overlay basemap (web tiles)
-    p.add_argument("--basemap", action="store_true", help="Render a tile basemap behind trails (requires contextily + pyproj).")
-    p.add_argument(
-        "--basemap_provider",
-        default="cartodb_positron",
-        help=(
-            "Basemap tileset. Supported shortcuts: cartodb_positron, cartodb_darkmatter, osm. "
-            "(Advanced: try a contextily.providers path like 'CartoDB.Positron')"
-        ),
-    )
-    p.add_argument("--basemap_zoom", default="auto", help="Basemap zoom level (e.g. 10, 12) or 'auto'.")
-    p.add_argument("--basemap_alpha", type=float, default=0.85, help="Basemap opacity (0..1).")
-    p.add_argument("--basemap_prefetch_timeout", type=int, default=90, help="Max seconds to wait for basemap tile download before falling back to solid background.")
-    return p.parse_args()
+# ============================================================================
+
+_WEBMERCATOR_INITIAL_RES_M_PER_PX = 156543.03392804097  # at equator, zoom=0
+_WEB_TILE_SIZE_PX = 256
+_BASEMAP_MAX_TILES_DEFAULT = 256
+
+def encode_video_ffmpeg(frames_dir: str, fps: int, output_path: str, crf: int = 18, preset: str = "medium", overwrite: bool = False):
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg not found on PATH. Install it (e.g. `brew install ffmpeg`) or run FFmpeg manually.")
+
+    input_pattern = os.path.join(frames_dir, "frame_%05d.png")
+    cmd = [
+        ffmpeg,
+        "-y" if overwrite else "-n",
+        "-framerate",
+        str(fps),
+        "-start_number",
+        "0",
+        "-i",
+        input_pattern,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        str(crf),
+        "-preset",
+        preset,
+        "-movflags",
+        "+faststart",
+        "-vf",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        output_path,
+    ]
+
+    print("Encoding video with FFmpeg:")
+    print(" ".join(cmd))
+    subprocess.run(cmd, check=True)
 
 def load_data(input_path):
     if os.path.isdir(input_path):
@@ -116,12 +153,7 @@ def compute_canvas_limits(df, padding=0.01):
 
 def region_bbox(name: str):
     """Return (min_lon, max_lon, min_lat, max_lat) for known presets."""
-    # Covers Helsinki + Espoo (and a bit of Vantaa), avoids distant GPS glitches.
-    presets = {
-        # Roughly: Kirkkonummi edge -> East Helsinki, South coast -> North of airport.
-        # Tweak if you want tighter framing.
-        "helsinki_espoo": (24.30, 25.35, 60.05, 60.35),
-    }
+    presets = CONFIG["regions"]
     return presets.get(name)
 
 
@@ -223,6 +255,35 @@ def _parse_zoom(value):
     return int(s)
 
 
+def _auto_basemap_zoom_for_extent(xmin: float, xmax: float, ymin: float, ymax: float, width_px: int, height_px: int, lat_center_deg: float):
+    """Choose a tile zoom so the basemap has roughly >= canvas resolution."""
+    bbox_w_m = max(1.0, float(xmax - xmin))
+    bbox_h_m = max(1.0, float(ymax - ymin))
+    target_res_x = bbox_w_m / max(1, int(width_px))
+    target_res_y = bbox_h_m / max(1, int(height_px))
+    target_res = min(target_res_x, target_res_y)
+
+    lat_center_rad = math.radians(float(lat_center_deg))
+    cos_lat = max(0.1, abs(math.cos(lat_center_rad)))
+
+    # resolution(z) = cos(lat) * initial_res / 2^z
+    zoom_float = math.log2((cos_lat * _WEBMERCATOR_INITIAL_RES_M_PER_PX) / max(1e-9, target_res))
+    zoom = int(max(0, min(19, math.ceil(zoom_float))))
+
+    def tiles_for_zoom(z: int) -> int:
+        res = (cos_lat * _WEBMERCATOR_INITIAL_RES_M_PER_PX) / (2 ** z)
+        tile_span_m = res * _WEB_TILE_SIZE_PX
+        tiles_x = int(math.ceil(bbox_w_m / tile_span_m))
+        tiles_y = int(math.ceil(bbox_h_m / tile_span_m))
+        return max(1, tiles_x) * max(1, tiles_y)
+
+    # Cap the number of tiles so we don't accidentally download a massive mosaic.
+    while zoom > 0 and tiles_for_zoom(zoom) > _BASEMAP_MAX_TILES_DEFAULT:
+        zoom -= 1
+
+    return zoom
+
+
 def _run_with_timeout(seconds: int, fn, *args, **kwargs):
     """Run fn with a hard timeout (Unix only). Returns (ok, result_or_exc)."""
     if seconds <= 0:
@@ -304,6 +365,7 @@ def render_single_frame(args):
         outdir,
         basemap_npz,
         basemap_alpha,
+        basemap_interpolation,
     ) = args
 
     fig = plt.figure(figsize=(width/100, height/100), dpi=100)
@@ -318,7 +380,7 @@ def render_single_frame(args):
     if basemap_npz:
         try:
             bm_img, bm_extent = _load_basemap_cached(basemap_npz)
-            ax.imshow(bm_img, extent=bm_extent.tolist(), interpolation="bilinear", zorder=0, alpha=basemap_alpha)
+            ax.imshow(bm_img, extent=bm_extent.tolist(), interpolation=basemap_interpolation, zorder=0, alpha=basemap_alpha)
         except Exception as e:
             # Fall back to solid background if tiles are unavailable.
             # (e.g., missing cached file or network error during prefetch)
@@ -375,6 +437,7 @@ def render_frames_parallel(
     basemap_zoom="auto",
     basemap_alpha=0.85,
     basemap_prefetch_timeout=90,
+    basemap_interpolation="bilinear",
 ):
     # Decide framing bbox (lon/lat)
     effective_bbox = None
@@ -413,12 +476,23 @@ def render_frames_parallel(
             xmin, xmax, ymin, ymax = _project_bbox_to_web_mercator(effective_bbox)
         else:
             xmin, xmax, ymin, ymax = compute_canvas_limits_xy(work_df, x_col=x_col, y_col=y_col, padding=0.03)
+
+        if effective_bbox is not None:
+            lat_center = (effective_bbox[2] + effective_bbox[3]) / 2.0
+        else:
+            lat_center = float(df["latitude"].median()) if "latitude" in df.columns else 60.2
+
         provider_obj = _resolve_basemap_provider(basemap_provider)
         if provider_obj is None:
             raise RuntimeError(f"Unknown basemap provider: {basemap_provider}")
-        basemap_npz = os.path.join(outdir, "_basemap_cache.npz")
+
+        zoom = _parse_zoom(basemap_zoom)
+        if zoom == "auto":
+            zoom = _auto_basemap_zoom_for_extent(xmin, xmax, ymin, ymax, width, height, lat_center_deg=lat_center)
+            print(f"Basemap: auto-zoom selected {zoom} for {width}x{height}")
+
+        basemap_npz = os.path.join(outdir, f"_basemap_cache_z{zoom}.npz")
         if not os.path.exists(basemap_npz):
-            zoom = _parse_zoom(basemap_zoom)
             print(f"Basemap: downloading tiles (provider={basemap_provider}, zoom={zoom}) ...")
             t0 = time.time()
             ok, res = _run_with_timeout(
@@ -465,6 +539,7 @@ def render_frames_parallel(
         outdir,
         basemap_npz,
         basemap_alpha,
+        basemap_interpolation,
     )
                  for i, ft in enumerate(frame_times)]
 
@@ -472,26 +547,58 @@ def render_frames_parallel(
         list(tqdm(pool.imap_unordered(render_single_frame, args_list), total=total_frames, desc="frames"))
 
     print(f"Frames saved to {outdir}/")
-    print("Combine frames into video:")
+    print("To encode into MP4 manually:")
     print(f"ffmpeg -y -framerate {fps} -i {outdir}/frame_%05d.png -c:v libx264 -pix_fmt yuv420p -crf 18 output.mp4")
 
 def main():
-    args = parse_args()
-    df = load_data(args.input)
-    render_frames_parallel(df, fps=args.fps, duration=args.duration,
-                           width=args.width, height=args.height,
-                           trail_seconds=args.trail_seconds,
-                           bg_color=args.bg_color, point_size=args.point_size,
-                           workers=args.workers,
-                           outdir=args.outdir,
-                           region=args.region,
-                           bbox=args.bbox,
-                           filter_outside_bbox=args.filter_outside_bbox,
-                           basemap=args.basemap,
-                           basemap_provider=args.basemap_provider,
-                           basemap_zoom=args.basemap_zoom,
-                           basemap_alpha=args.basemap_alpha,
-                           basemap_prefetch_timeout=args.basemap_prefetch_timeout)
+    # Load data
+    df = load_data(CONFIG["input_path"])
+    
+    # Determine effective bbox/region
+    effective_bbox = None
+    if CONFIG["use_region"]:
+        effective_bbox = region_bbox(CONFIG["region_name"])
+    
+    # Render frames
+    render_frames_parallel(
+        df,
+        fps=CONFIG["fps"],
+        duration=CONFIG["duration_sec"],
+        width=CONFIG["width_px"],
+        height=CONFIG["height_px"],
+        trail_seconds=CONFIG["trail_seconds"],
+        bg_color=CONFIG["bg_color"],
+        point_size=CONFIG["point_size"],
+        workers=CONFIG["num_workers"],
+        outdir=CONFIG["output_dir"],
+        region=CONFIG["region_name"] if CONFIG["use_region"] else "auto",
+        bbox=effective_bbox,
+        filter_outside_bbox=CONFIG["filter_outside_region"],
+        basemap=CONFIG["use_basemap"],
+        basemap_provider=CONFIG["basemap_provider"],
+        basemap_zoom=CONFIG["basemap_zoom"],
+        basemap_alpha=CONFIG["basemap_alpha"],
+        basemap_prefetch_timeout=CONFIG["basemap_prefetch_timeout"],
+        basemap_interpolation=CONFIG["basemap_interpolation"],
+    )
+    
+    # Encode to MP4 if requested
+    if CONFIG["encode_video"]:
+        encode_video_ffmpeg(
+            CONFIG["output_dir"],
+            fps=CONFIG["fps"],
+            output_path=CONFIG["video_output_path"],
+            crf=CONFIG["video_crf"],
+            preset=CONFIG["video_preset"],
+            overwrite=CONFIG["video_overwrite"],
+        )
+        if CONFIG["cleanup_frames"]:
+            for name in os.listdir(CONFIG["output_dir"]):
+                if name.startswith("frame_") and name.endswith(".png"):
+                    try:
+                        os.remove(os.path.join(CONFIG["output_dir"], name))
+                    except Exception:
+                        pass
 
 if __name__ == "__main__":
     main()

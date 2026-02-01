@@ -5,6 +5,5 @@ tqdm
 pillow
 requests
 urllib3<2
-# Optional (only needed for --basemap)
 contextily
 pyproj
