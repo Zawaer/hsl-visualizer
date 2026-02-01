@@ -2,6 +2,7 @@
 # renderer.py
 # Reads CSV(s) with columns from fetcher.py and renders fading-trail frames.
 # Produces images in frames/ and prints ffmpeg command.
+# Now ensures all frames have even width & height for FFmpeg.
 
 import os
 import math
@@ -12,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from tqdm import tqdm
+from PIL import Image
 
 plt.rcParams['figure.dpi'] = 100
 
@@ -46,17 +48,12 @@ def load_data(input_path):
     if not dfs:
         raise RuntimeError("No CSVs loaded.")
     df = pd.concat(dfs, ignore_index=True)
-    # normalize column names if needed
     df = df.rename(columns={c: c.strip() for c in df.columns})
-    # drop rows with missing coords
     df = df.dropna(subset=["latitude","longitude"])
-    # parse numeric lat/lon
     df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
     df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
     df = df.dropna(subset=["latitude","longitude"])
-    # ensure timestamps are tz-aware UTC
     df["timestamp_fetch_utc"] = pd.to_datetime(df["timestamp_fetch_utc"], utc=True)
-    # sort
     df = df.sort_values("timestamp_fetch_utc")
     return df
 
@@ -68,7 +65,6 @@ def compute_canvas_limits(df, padding=0.01):
     return (min_lon - lon_pad, max_lon + lon_pad, min_lat - lat_pad, max_lat + lat_pad)
 
 def vehicle_color_map(vehicle_ids):
-    # deterministic color per vehicle using a colormap
     cmap = plt.get_cmap("tab20")
     mapping = {}
     n = len(vehicle_ids)
@@ -77,12 +73,23 @@ def vehicle_color_map(vehicle_ids):
     return mapping
 
 def trail_segments(xs, ys):
-    # return list of segment pairs for LineCollection
     pts = np.array([xs, ys]).T
     if len(pts) < 2:
         return np.empty((0,2,2))
     segs = np.stack([pts[:-1], pts[1:]], axis=1)
     return segs
+
+def save_frame_even_size(img_path):
+    """Pad the image to ensure both width & height are even, overwriting the original file."""
+    im = Image.open(img_path)
+    w, h = im.size
+    new_w = w + (w % 2)
+    new_h = h + (h % 2)
+    if (new_w, new_h) != (w, h):
+        new_im = Image.new("RGBA", (new_w, new_h), (0,0,0,0))
+        new_im.paste(im, (0,0))
+        new_im.save(img_path)
+    im.close()
 
 def render_frames(df, outdir, fps=25, duration=30, width=1080, height=1080, trail_seconds=3600, bg_color="#0a0a0f", point_size=6):
     os.makedirs(outdir, exist_ok=True)
@@ -94,18 +101,12 @@ def render_frames(df, outdir, fps=25, duration=30, width=1080, height=1080, trai
     print("Data time range:", t_start, "→", t_end)
     print("Rendering", total_frames, "frames (fps:", fps, "duration:", duration, "s)")
 
-    # mapping times for frames
     frame_times = pd.to_datetime(np.linspace(t_start.value, t_end.value, total_frames)).tz_localize('UTC')
-    # NOTE: using numpy linspace on epoch nanoseconds, then convert to Timestamp
-    
-    # Build per-vehicle history for quick slicing
     vehicles = df["vehicle_id"].unique()
     trails = {vid: df[df["vehicle_id"] == vid][["timestamp_fetch_utc","longitude","latitude"]].to_numpy() for vid in vehicles}
     colors = vehicle_color_map(vehicles)
     xmin, xmax, ymin, ymax = compute_canvas_limits(df, padding=0.03)
 
-    # scale to keep aspect ratio equal
-    aspect = (xmax - xmin) / (ymax - ymin)
     fig = plt.figure(figsize=(width/100, height/100), dpi=100)
     ax = fig.add_axes([0,0,1,1])
     ax.set_facecolor(bg_color)
@@ -114,8 +115,6 @@ def render_frames(df, outdir, fps=25, duration=30, width=1080, height=1080, trai
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_aspect('equal', adjustable='box')
-
-    # precompute vehicle list for speed
     vehicle_list = list(trails.keys())
 
     for i, ft in enumerate(tqdm(frame_times, desc="frames")):
@@ -127,45 +126,36 @@ def render_frames(df, outdir, fps=25, duration=30, width=1080, height=1080, trai
         ax.set_yticks([])
         ax.set_aspect('equal', adjustable='box')
 
-        # For each vehicle, draw trail up to frame time ft
         for vid in vehicle_list:
             arr = trails[vid]
-            # arr rows: [timestamp, lon, lat] as numpy objects
-            # convert timestamps to pandas Timestamps for comparison
             times = pd.to_datetime(arr[:,0])
             mask = times <= ft
             if not mask.any():
                 continue
             xs = arr[mask,1].astype(float)
             ys = arr[mask,2].astype(float)
-            # compute ages relative to ft in seconds
             ages = (ft - pd.to_datetime(arr[mask,0])).total_seconds().astype(float)
-            # fade alpha based on age and trail_seconds
             alphas = np.clip(1 - (ages / trail_seconds), 0.0, 1.0)
             if len(xs) >= 2:
                 segs = trail_segments(xs, ys)
-                # alpha per segment: take average of endpoints age
                 seg_ages = (ages[:-1] + ages[1:]) / 2.0
                 seg_alphas = np.clip(1 - (seg_ages / trail_seconds), 0.0, 1.0)
-                # line collection with varying alpha
                 lc = LineCollection(segs, linewidths=1.5, colors=[colors[vid]]*len(segs), alpha=1.0, zorder=1)
-                # Since LineCollection doesn't support per-segment alpha directly through one alpha argument,
-                # set RGBA colors manually incorporating per-segment alpha.
                 seg_rgba = []
                 base_color = colors[vid]
                 for a in seg_alphas:
                     seg_rgba.append((base_color[0], base_color[1], base_color[2], float(a*0.9)))
                 lc.set_colors(seg_rgba)
                 ax.add_collection(lc)
-            # draw most recent dot
             ax.scatter(xs[-1], ys[-1], s=point_size, color=colors[vid], edgecolors='none', zorder=2)
 
-        # small timestamp overlay
         ts_text = ft.strftime("%Y-%m-%d %H:%M:%S UTC")
         ax.text(0.01, 0.02, ts_text, color="white", fontsize=10, transform=ax.transAxes, zorder=10)
 
         fname = os.path.join(outdir, f"frame_{i:05d}.png")
         fig.savefig(fname, dpi=100, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0)
+        save_frame_even_size(fname)  # <-- ensure even dimensions for FFmpeg
+
     plt.close(fig)
     print("Frames saved to:", outdir)
     print("Use ffmpeg to combine frames into mp4, e.g.:")
