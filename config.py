@@ -1,0 +1,68 @@
+import os
+from multiprocessing import cpu_count
+
+# ============================================================================
+# FETCHER CONFIGURATION
+# ============================================================================
+
+FETCHER = {
+    # GTFS-RT API endpoint
+    "vehicle_pos_url": "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl",
+    
+    # Poll interval in seconds
+    "poll_interval": 3,
+    
+    # Output directory for CSV logs
+    "output_dir": "data",
+}
+
+# ============================================================================
+# RENDERER CONFIGURATION
+# ============================================================================
+
+RENDERER = {
+    # ========== Input/Output ==========
+    "input_path": "data",  # CSV file or directory with CSVs
+    "output_dir": "frames",  # Directory to write frame PNGs
+    
+    # ========== Rendering params ==========
+    "fps": 25,
+    "duration_sec": 5,
+    "width_px": 3840,
+    "height_px": 3840,
+    "trail_seconds": 3600,
+    "bg_color": "#0a0a0f",
+    "point_size": 12.0,
+    "num_workers": max(1, cpu_count() - 1),  # Leave 1 core free for system responsiveness
+    
+    # ========== Framing / Region ==========
+    "use_region": True,  # Use a preset region or auto-bounds?
+    "region_name": "helsinki_espoo",  # "helsinki_espoo" or define custom in 'regions'
+    "regions": {
+        "helsinki_espoo": (24.6, 25.2, 60.12, 60.34),  # min_lon, max_lon, min_lat, max_lat
+    },
+    "filter_outside_region": True,  # Drop GPS points outside region?
+    
+    # ========== Basemap (background map tiles) ==========
+    "use_basemap": True,  # Enable background tiles?
+    "basemap_provider": "cartodb_positron",  # "cartodb_positron", "cartodb_darkmatter", "osm"
+    "basemap_alpha": 0.8,  # Opacity: 0.0 (transparent) to 1.0 (opaque)
+    "basemap_interpolation": "bilinear",  # "nearest", "bilinear", "bicubic"
+    "basemap_zoom": "auto",  # "auto" to pick based on resolution, or explicit int (e.g., 14)
+    "basemap_prefetch_timeout": 90,  # Max seconds waiting for tiles before fallback
+    
+    # ========== Video encoding ==========
+    "encode_video": True,  # Automatically encode MP4 after rendering?
+    "video_output_path": "output.mp4",  # Output MP4 file
+    "video_crf": 18,  # Quality: lower=better (0-51), typical 18-28
+    "video_preset": "medium",  # Speed: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+    "video_overwrite": True,  # Overwrite output MP4 if it exists?
+    "cleanup_frames": True,  # Delete PNG frames after successful video encode?
+}
+
+# ============================================================================
+# Ensure output directories exist
+# ============================================================================
+
+os.makedirs(FETCHER["output_dir"], exist_ok=True)
+os.makedirs(RENDERER["output_dir"], exist_ok=True)

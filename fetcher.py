@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# fetcher.py
-# Polls HSL GTFS-RT vehicle positions and appends to a daily CSV.
-
 import time
 import csv
 import os
@@ -10,15 +6,7 @@ from datetime import datetime, timezone
 import requests
 from google.transit import gtfs_realtime_pb2
 
-# Endpoint (HSL GTFS-RT vehicle positions)
-VEHICLE_POS_URL = "https://realtime.hsl.fi/realtime/vehicle-positions/v2/hsl"
-
-# Poll interval in seconds
-POLL_INTERVAL = 3
-
-# Output directory
-OUT_DIR = "data"
-os.makedirs(OUT_DIR, exist_ok=True)
+from config import FETCHER as CONFIG
 
 running = True
 
@@ -33,26 +21,29 @@ signal.signal(signal.SIGTERM, signal_handler)
 def current_csv_path():
     date = datetime.now().strftime("%Y%m%d")
     fname = f"vehicle_positions_{date}.csv"
-    return os.path.join(OUT_DIR, fname)
+    return os.path.join(CONFIG["output_dir"], fname)
+
+# CSV columns to write (fixed)
+CSV_COLUMNS = [
+    "timestamp_fetch_utc",
+    "vehicle_id",
+    "route_id",
+    "latitude",
+    "longitude",
+    "bearing",
+    "speed",
+    "current_status",
+    "occupancy_status",
+    "trip_start_time",
+    "vehicle_label",
+    "raw_timestamp",
+]
 
 def ensure_csv_header(path):
     if not os.path.exists(path):
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "timestamp_fetch_utc",
-                "vehicle_id",
-                "route_id",
-                "latitude",
-                "longitude",
-                "bearing",
-                "speed",
-                "current_status",
-                "occupancy_status",
-                "trip_start_time",
-                "vehicle_label",
-                "raw_timestamp"  # vehicle-provided timestamp if present
-            ])
+            writer.writerow(CSV_COLUMNS)
 
 def extract_field_safe(obj, field, default=""):
     try:
@@ -63,7 +54,7 @@ def extract_field_safe(obj, field, default=""):
 def poll_once(csv_path):
     feed = gtfs_realtime_pb2.FeedMessage()
     try:
-        resp = requests.get(VEHICLE_POS_URL, timeout=10)
+        resp = requests.get(CONFIG["vehicle_pos_url"], timeout=10)
         resp.raise_for_status()
         feed.ParseFromString(resp.content)
     except Exception as e:
@@ -124,7 +115,7 @@ def poll_once(csv_path):
     return len(rows)
 
 def main_loop():
-    print("Starting fetcher. Poll interval:", POLL_INTERVAL, "s")
+    print("Starting fetcher. Poll interval:", CONFIG["poll_interval"], "s")
     current_path = current_csv_path()
     ensure_csv_header(current_path)
 
@@ -142,7 +133,7 @@ def main_loop():
         else:
             print(f"No positions logged at {datetime.utcnow().isoformat()}")
         # sleep with small increments so SIGINT is responsive
-        for _ in range(int(POLL_INTERVAL*10)):
+        for _ in range(int(CONFIG["poll_interval"]*10)):
             if not running:
                 break
             time.sleep(0.1)
