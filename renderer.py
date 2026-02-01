@@ -53,7 +53,7 @@ CONFIG = {
     "use_region": True,  # Use a preset region or auto-bounds?
     "region_name": "helsinki_espoo",  # "helsinki_espoo" or define custom in 'regions'
     "regions": {
-        "helsinki_espoo": (24.6, 25.2, 60.12, 60.34),  # min_lon, max_lon, min_lat, max_lat
+        "helsinki_espoo": (24.5, 25.2, 60.12, 60.34),  # min_lon, max_lon, min_lat, max_lat
     },
     "filter_outside_region": True,  # Drop GPS points outside region?
     
@@ -71,7 +71,7 @@ CONFIG = {
     "video_crf": 18,  # Quality: lower=better (0-51), typical 18-28
     "video_preset": "medium",  # Speed: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
     "video_overwrite": True,  # Overwrite output MP4 if it exists?
-    "cleanup_frames": False,  # Delete PNG frames after successful video encode?
+    "cleanup_frames": True,  # Delete PNG frames after successful video encode?
 }
 
 # ============================================================================
@@ -592,6 +592,7 @@ def main():
             preset=CONFIG["video_preset"],
             overwrite=CONFIG["video_overwrite"],
         )
+        # Delete individual PNG frames after successful encoding (keep basemap cache)
         if CONFIG["cleanup_frames"]:
             for name in os.listdir(CONFIG["output_dir"]):
                 if name.startswith("frame_") and name.endswith(".png"):
@@ -599,6 +600,7 @@ def main():
                         os.remove(os.path.join(CONFIG["output_dir"], name))
                     except Exception:
                         pass
+            print(f"Cleaned up PNG frames. Video: {CONFIG['video_output_path']}")
 
 if __name__ == "__main__":
     main()
