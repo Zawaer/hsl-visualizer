@@ -352,7 +352,7 @@ def render_single_frame(args):
             segs = trail_segments(xs, ys)
             seg_ages = (ages[:-1] + ages[1:]) / 2.0
             seg_alphas = np.clip(1 - (seg_ages / trail_seconds), 0.0, 1.0)
-            lc = LineCollection(segs, linewidths=1.5, colors=[colors[vid]]*len(segs), alpha=1.0, zorder=1)
+            lc = LineCollection(segs, linewidths=CONFIG["trail_width"], colors=[colors[vid]]*len(segs), alpha=1.0, zorder=1)
             seg_rgba = []
             base_color = colors[vid]
             for a in seg_alphas:
