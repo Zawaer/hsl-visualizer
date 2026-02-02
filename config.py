@@ -37,7 +37,7 @@ RENDERER = {
         "bus": (0.2, 0.6, 1.0),       # Blue
         "tram": (0.2, 0.9, 0.3),      # Green
         "metro": (1.0, 0.2, 0.2),     # Red
-        "train": (0.9, 0.5, 0.1),     # Orange
+        "train": (0.7, 0.2, 0.9),     # Purple
         "ferry": (0.1, 0.8, 0.8),     # Cyan
         "other": (1.0, 1.0, 1.0),     # White
     },
