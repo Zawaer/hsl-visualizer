@@ -325,12 +325,14 @@ def _render_trails_only(vehicle_list, trails, colors, ft, trail_seconds, xmin, x
     for vid in vehicle_list:
         arr = trails[vid]
         times = pd.to_datetime(arr[:,0])
-        mask = times <= ft
+        # Only show points within the trail_seconds window
+        ages_all = (ft - times).total_seconds()
+        mask = (times <= ft) & (ages_all <= trail_seconds)
         if not mask.any():
             continue
         xs = arr[mask,1].astype(float)
         ys = arr[mask,2].astype(float)
-        ages = (ft - pd.to_datetime(arr[mask,0])).total_seconds().astype(float)
+        ages = ages_all[mask].astype(float)
         if len(xs) >= 2:
             segs = trail_segments(xs, ys)
             seg_ages = (ages[:-1] + ages[1:]) / 2.0
@@ -342,7 +344,8 @@ def _render_trails_only(vehicle_list, trails, colors, ft, trail_seconds, xmin, x
             lc = LineCollection(segs, linewidths=CONFIG["trail_width"], alpha=1.0, zorder=1)
             lc.set_colors(seg_rgba)
             ax.add_collection(lc)
-        ax.scatter(xs[-1], ys[-1], s=CONFIG.get("point_size", 16), color=colors[vid], edgecolors='none', zorder=2)
+        if len(xs) > 0:
+            ax.scatter(xs[-1], ys[-1], s=CONFIG.get("point_size", 16), color=colors[vid], edgecolors='none', zorder=2)
 
     buf = BytesIO()
     fig.savefig(buf, format='png', dpi=100, transparent=True, bbox_inches='tight', pad_inches=0)

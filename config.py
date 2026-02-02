@@ -28,9 +28,9 @@ RENDERER = {
     # ========== Rendering params ==========
     "fps": 25,
     "duration_sec": 1,
-    "width_px": 3840,
-    "height_px": 3840,
-    "trail_seconds": 3600,
+    "width_px": 2160,
+    "height_px": 2160,
+    "trail_seconds": 180,
     "trail_width": 4,  # Trail line width in pixels
     "trail_glow": True,  # Enable glow effect around trails?
     "trail_glow_blur_radius": 20,  # Gaussian blur radius in pixels (higher = wider glow)
