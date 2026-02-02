@@ -27,11 +27,20 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 1,
+    "duration_sec": 2,
     "width_px": 2160,
     "height_px": 2160,
-    "trail_seconds": 180,
+    "trail_seconds": 300,
     "trail_width": 4,  # Trail line width in pixels
+    "color_by_vehicle_type": True,  # Color trails by vehicle type (bus, tram, metro) instead of unique per vehicle
+    "vehicle_type_colors": {
+        "bus": (0.2, 0.6, 1.0),       # Blue
+        "tram": (0.2, 0.9, 0.3),      # Green
+        "metro": (1.0, 0.2, 0.2),     # Red
+        "train": (0.9, 0.5, 0.1),     # Orange
+        "ferry": (0.1, 0.8, 0.8),     # Cyan
+        "other": (1.0, 1.0, 1.0),     # White
+    },
     "trail_glow": True,  # Enable glow effect around trails?
     "trail_glow_blur_radius": 20,  # Gaussian blur radius in pixels (higher = wider glow)
     "trail_glow_intensity": 2.0,  # Glow brightness multiplier (1.0 = same as trail, 2.0 = 2x brighter)

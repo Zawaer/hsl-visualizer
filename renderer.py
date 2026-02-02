@@ -275,11 +275,72 @@ def _load_basemap_cached(npz_path: str):
     _BASEMAP_CACHE[npz_path] = (img, extent)
     return img, extent
 
+def get_vehicle_type_from_route(route_id: str) -> str:
+    """Determine vehicle type from HSL route_id prefix.
+    
+    HSL route_id prefixes:
+    - 1xxx, 2xxx = Bus (Helsinki area)
+    - 3xxx = Tram (except 31M)
+    - 31M1, 31M2 = Metro
+    - 4xxx = Commuter train
+    - 7xxx = Ferry
+    """
+    if not route_id:
+        return "other"
+    
+    route_str = str(route_id).strip().upper()
+    
+    # Metro check first (31M1, 31M2)
+    if route_str.startswith("31M"):
+        return "metro"
+    
+    # Get first digit
+    first_char = route_str[0] if route_str else ""
+    
+    if first_char == "3":
+        return "tram"
+    elif first_char in ("1", "2"):
+        return "bus"
+    elif first_char == "4":
+        return "train"
+    elif first_char == "7":
+        return "ferry"
+    else:
+        return "other"
+
+
 def vehicle_color_map(vehicle_ids):
     cmap = plt.get_cmap("tab20")
     mapping = {}
     for i, vid in enumerate(sorted(vehicle_ids)):
         mapping[vid] = cmap(i % 20)
+    return mapping
+
+
+def vehicle_type_color_map(df, vehicle_ids):
+    """Create color mapping based on vehicle type (derived from route_id)."""
+    type_colors = CONFIG.get("vehicle_type_colors", {
+        "bus": (0.2, 0.6, 1.0),
+        "tram": (0.2, 0.9, 0.3),
+        "metro": (1.0, 0.2, 0.2),
+        "train": (0.9, 0.5, 0.1),
+        "ferry": (0.1, 0.8, 0.8),
+        "other": (1.0, 1.0, 1.0),
+    })
+    
+    mapping = {}
+    for vid in vehicle_ids:
+        # Get the most common route_id for this vehicle
+        vehicle_rows = df[df["vehicle_id"] == vid]
+        if len(vehicle_rows) > 0 and "route_id" in vehicle_rows.columns:
+            route_id = vehicle_rows["route_id"].mode().iloc[0] if len(vehicle_rows["route_id"].mode()) > 0 else ""
+        else:
+            route_id = ""
+        
+        vtype = get_vehicle_type_from_route(route_id)
+        color = type_colors.get(vtype, type_colors.get("other", (1.0, 1.0, 1.0)))
+        mapping[vid] = color
+    
     return mapping
 
 def trail_segments(xs, ys):
@@ -533,7 +594,12 @@ def render_frames_parallel(
 
     vehicles = work_df["vehicle_id"].unique()
     trails = {vid: work_df[work_df["vehicle_id"] == vid][["timestamp_fetch_utc", x_col, y_col]].to_numpy() for vid in vehicles}
-    colors = vehicle_color_map(vehicles)
+    
+    # Choose color mapping: by vehicle type or unique per vehicle
+    if CONFIG.get("color_by_vehicle_type", False):
+        colors = vehicle_type_color_map(df, vehicles)
+    else:
+        colors = vehicle_color_map(vehicles)
 
     if basemap:
         if effective_bbox is not None:
