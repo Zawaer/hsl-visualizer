@@ -49,7 +49,7 @@ RENDERER = {
     
     # ========== Basemap (background map tiles) ==========
     "use_basemap": True,  # Enable background tiles?
-    "basemap_provider": "cartodb_positron",  # "cartodb_positron", "cartodb_darkmatter", "osm"
+    "basemap_provider": "cartodb_darkmatter_nolabels",  # Options: cartodb_positron, cartodb_positron_nolabels, cartodb_darkmatter, cartodb_darkmatter_nolabels, osm
     "basemap_alpha": 0.8,  # Opacity: 0.0 (transparent) to 1.0 (opaque)
     "basemap_interpolation": "bilinear",  # "nearest", "bilinear", "bicubic"
     "basemap_zoom": "auto",  # "auto" to pick based on resolution, or explicit int (e.g., 14)

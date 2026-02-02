@@ -134,7 +134,9 @@ def _resolve_basemap_provider(provider_str: str):
     key = provider_str.strip()
     shortcuts = {
         "cartodb_positron": "CartoDB.Positron",
+        "cartodb_positron_nolabels": "CartoDB.PositronNoLabels",
         "cartodb_darkmatter": "CartoDB.DarkMatter",
+        "cartodb_darkmatter_nolabels": "CartoDB.DarkMatterNoLabels",
         "osm": "OpenStreetMap.Mapnik",
     }
     key = shortcuts.get(key.lower(), key)
