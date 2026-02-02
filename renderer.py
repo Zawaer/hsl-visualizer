@@ -404,27 +404,42 @@ def render_single_frame(args):
     if CONFIG.get("trail_glow", False):
         glow_blur_radius = CONFIG.get("trail_glow_blur_radius", 15)  # in pixels
         glow_intensity = CONFIG.get("trail_glow_intensity", 1.5)  # brightness boost
-        glow_color = CONFIG.get("trail_glow_color", (255, 140, 0))  # Orange glow (RGB tuple)
         
-        # Create glow from trails - use alpha channel as glow shape
-        glow_img = trails_img.copy()
-        r, g, b, a = glow_img.split()
+        # Convert to numpy for premultiplied alpha blurring (preserves colors)
+        img_arr = np.array(trails_img, dtype=np.float32)
+        r = img_arr[:, :, 0]
+        g = img_arr[:, :, 1]
+        b = img_arr[:, :, 2]
+        a = img_arr[:, :, 3]
         
-        # Blur just the alpha channel to get glow shape
+        # Convert to premultiplied alpha: RGB = RGB * (A / 255)
+        alpha_norm = a / 255.0
+        r_premult = r * alpha_norm
+        g_premult = g * alpha_norm
+        b_premult = b * alpha_norm
+        
+        # Apply Gaussian blur to all channels (in premultiplied space)
+        from scipy.ndimage import gaussian_filter
+        sigma = glow_blur_radius / 2.0  # Convert radius to sigma
         for _ in range(2):
-            a = a.filter(ImageFilter.GaussianBlur(radius=glow_blur_radius))
+            r_premult = gaussian_filter(r_premult, sigma=sigma)
+            g_premult = gaussian_filter(g_premult, sigma=sigma)
+            b_premult = gaussian_filter(b_premult, sigma=sigma)
+            a = gaussian_filter(a, sigma=sigma)
+        
+        # Un-premultiply: RGB = RGB / (A / 255)
+        alpha_norm = a / 255.0
+        alpha_safe = np.maximum(alpha_norm, 0.001)  # Avoid division by zero
+        r_out = np.clip(r_premult / alpha_safe, 0, 255)
+        g_out = np.clip(g_premult / alpha_safe, 0, 255)
+        b_out = np.clip(b_premult / alpha_safe, 0, 255)
         
         # Boost alpha for glow visibility
-        a_arr = np.array(a, dtype=np.float32)
-        a_arr = np.clip(a_arr * glow_intensity, 0, 255)
-        a = Image.fromarray(a_arr.astype(np.uint8), mode='L')
+        a_out = np.clip(a * glow_intensity, 0, 255)
         
-        # Create solid orange RGB channels
-        r = Image.new('L', a.size, glow_color[0])
-        g = Image.new('L', a.size, glow_color[1])
-        b = Image.new('L', a.size, glow_color[2])
-        
-        glow_img = Image.merge('RGBA', (r, g, b, a))
+        # Rebuild glow image
+        glow_arr = np.stack([r_out, g_out, b_out, a_out], axis=-1).astype(np.uint8)
+        glow_img = Image.fromarray(glow_arr, mode='RGBA')
         
         # Composite: base -> glow -> trails
         composite = base_img.copy()
