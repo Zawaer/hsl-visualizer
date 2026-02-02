@@ -404,22 +404,26 @@ def render_single_frame(args):
     if CONFIG.get("trail_glow", False):
         glow_blur_radius = CONFIG.get("trail_glow_blur_radius", 15)  # in pixels
         glow_intensity = CONFIG.get("trail_glow_intensity", 1.5)  # brightness boost
+        glow_color = CONFIG.get("trail_glow_color", (255, 140, 0))  # Orange glow (RGB tuple)
         
-        # Create glow from trails
+        # Create glow from trails - use alpha channel as glow shape
         glow_img = trails_img.copy()
-        
-        # Apply Gaussian blur multiple times for smoother glow
-        for _ in range(2):
-            glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=glow_blur_radius))
-        
-        # Boost glow intensity by adjusting alpha and brightness
-        # Split channels
         r, g, b, a = glow_img.split()
         
-        # Boost the alpha channel for visibility
-        a = a.point(lambda x: min(255, int(x * glow_intensity)))
+        # Blur just the alpha channel to get glow shape
+        for _ in range(2):
+            a = a.filter(ImageFilter.GaussianBlur(radius=glow_blur_radius))
         
-        # Recombine
+        # Boost alpha for glow visibility
+        a_arr = np.array(a, dtype=np.float32)
+        a_arr = np.clip(a_arr * glow_intensity, 0, 255)
+        a = Image.fromarray(a_arr.astype(np.uint8), mode='L')
+        
+        # Create solid orange RGB channels
+        r = Image.new('L', a.size, glow_color[0])
+        g = Image.new('L', a.size, glow_color[1])
+        b = Image.new('L', a.size, glow_color[2])
+        
         glow_img = Image.merge('RGBA', (r, g, b, a))
         
         # Composite: base -> glow -> trails

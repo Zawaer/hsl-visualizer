@@ -35,6 +35,7 @@ RENDERER = {
     "trail_glow": True,  # Enable glow effect around trails?
     "trail_glow_blur_radius": 20,  # Gaussian blur radius in pixels (higher = wider glow)
     "trail_glow_intensity": 8.0,  # Glow brightness multiplier (1.0 = same as trail, 2.0 = 2x brighter)
+    "trail_glow_color": (255, 140, 0),  # Glow color as RGB tuple (orange by default)
     "bg_color": "#0a0a0f",
     "point_size": 16.0,
     "num_workers": max(1, cpu_count() - 1),  # Leave 1 core free for system responsiveness
