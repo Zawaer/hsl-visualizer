@@ -9,8 +9,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from tqdm import tqdm
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 from multiprocessing import Pool, cpu_count
+from io import BytesIO
 
 try:
     from pyproj import Transformer
@@ -297,6 +298,57 @@ def save_frame_even_size(img_path):
         new_im.save(img_path)
     im.close()
 
+def _fig_to_pil(fig):
+    """Convert matplotlib figure to PIL Image (RGBA)."""
+    buf = BytesIO()
+    fig.savefig(buf, format='png', dpi=100, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0)
+    buf.seek(0)
+    img = Image.open(buf).convert('RGBA')
+    return img
+
+def _render_trails_only(vehicle_list, trails, colors, ft, trail_seconds, xmin, xmax, ymin, ymax, width, height):
+    """Render trails and dots on transparent background, return PIL Image."""
+    fig = plt.figure(figsize=(width/100, height/100), dpi=100)
+    ax = fig.add_axes([0,0,1,1])
+    ax.set_facecolor('none')
+    fig.patch.set_alpha(0.0)
+    ax.patch.set_alpha(0.0)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal', adjustable='box')
+    ax.axis('off')
+
+    for vid in vehicle_list:
+        arr = trails[vid]
+        times = pd.to_datetime(arr[:,0])
+        mask = times <= ft
+        if not mask.any():
+            continue
+        xs = arr[mask,1].astype(float)
+        ys = arr[mask,2].astype(float)
+        ages = (ft - pd.to_datetime(arr[mask,0])).total_seconds().astype(float)
+        if len(xs) >= 2:
+            segs = trail_segments(xs, ys)
+            seg_ages = (ages[:-1] + ages[1:]) / 2.0
+            seg_alphas = np.clip(1 - (seg_ages / trail_seconds), 0.0, 1.0)
+            base_color = colors[vid]
+            seg_rgba = []
+            for a in seg_alphas:
+                seg_rgba.append((base_color[0], base_color[1], base_color[2], float(a*0.9)))
+            lc = LineCollection(segs, linewidths=CONFIG["trail_width"], alpha=1.0, zorder=1)
+            lc.set_colors(seg_rgba)
+            ax.add_collection(lc)
+        ax.scatter(xs[-1], ys[-1], s=CONFIG.get("point_size", 16), color=colors[vid], edgecolors='none', zorder=2)
+
+    buf = BytesIO()
+    fig.savefig(buf, format='png', dpi=100, transparent=True, bbox_inches='tight', pad_inches=0)
+    buf.seek(0)
+    img = Image.open(buf).convert('RGBA')
+    plt.close(fig)
+    return img
+
 def render_single_frame(args):
     """Render a single frame (used by worker pool)."""
     (
@@ -320,6 +372,7 @@ def render_single_frame(args):
         basemap_interpolation,
     ) = args
 
+    # -- Step 1: Create base layer (background + basemap) --
     fig = plt.figure(figsize=(width/100, height/100), dpi=100)
     ax = fig.add_axes([0,0,1,1])
     ax.set_facecolor(bg_color)
@@ -333,42 +386,77 @@ def render_single_frame(args):
         try:
             bm_img, bm_extent = _load_basemap_cached(basemap_npz)
             ax.imshow(bm_img, extent=bm_extent.tolist(), interpolation=basemap_interpolation, zorder=0, alpha=basemap_alpha)
-        except Exception as e:
-            # Fall back to solid background if tiles are unavailable.
-            # (e.g., missing cached file or network error during prefetch)
+        except Exception:
             pass
 
-    for vid in vehicle_list:
-        arr = trails[vid]
-        times = pd.to_datetime(arr[:,0])
-        mask = times <= ft
-        if not mask.any():
-            continue
-        xs = arr[mask,1].astype(float)
-        ys = arr[mask,2].astype(float)
-        ages = (ft - pd.to_datetime(arr[mask,0])).total_seconds().astype(float)
-        alphas = np.clip(1 - (ages / trail_seconds), 0.0, 1.0)
-        if len(xs) >= 2:
-            segs = trail_segments(xs, ys)
-            seg_ages = (ages[:-1] + ages[1:]) / 2.0
-            seg_alphas = np.clip(1 - (seg_ages / trail_seconds), 0.0, 1.0)
-            lc = LineCollection(segs, linewidths=CONFIG["trail_width"], colors=[colors[vid]]*len(segs), alpha=1.0, zorder=1)
-            seg_rgba = []
-            base_color = colors[vid]
-            for a in seg_alphas:
-                seg_rgba.append((base_color[0], base_color[1], base_color[2], float(a*0.9)))
-            lc.set_colors(seg_rgba)
-            ax.add_collection(lc)
-        ax.scatter(xs[-1], ys[-1], s=point_size, color=colors[vid], edgecolors='none', zorder=2)
+    # Save base layer to PIL image
+    base_img = _fig_to_pil(fig)
+    plt.close(fig)
 
+    # -- Step 2: Render trails on transparent background --
+    trails_img = _render_trails_only(vehicle_list, trails, colors, ft, trail_seconds, xmin, xmax, ymin, ymax, width, height)
+    
+    # Resize trails_img to match base_img if needed
+    if trails_img.size != base_img.size:
+        trails_img = trails_img.resize(base_img.size, Image.LANCZOS)
+
+    # -- Step 3: Create glow layer via Gaussian blur --
+    if CONFIG.get("trail_glow", False):
+        glow_blur_radius = CONFIG.get("trail_glow_blur_radius", 15)  # in pixels
+        glow_intensity = CONFIG.get("trail_glow_intensity", 1.5)  # brightness boost
+        
+        # Create glow from trails
+        glow_img = trails_img.copy()
+        
+        # Apply Gaussian blur multiple times for smoother glow
+        for _ in range(2):
+            glow_img = glow_img.filter(ImageFilter.GaussianBlur(radius=glow_blur_radius))
+        
+        # Boost glow intensity by adjusting alpha and brightness
+        # Split channels
+        r, g, b, a = glow_img.split()
+        
+        # Boost the alpha channel for visibility
+        a = a.point(lambda x: min(255, int(x * glow_intensity)))
+        
+        # Recombine
+        glow_img = Image.merge('RGBA', (r, g, b, a))
+        
+        # Composite: base -> glow -> trails
+        composite = base_img.copy()
+        composite = Image.alpha_composite(composite, glow_img)
+        composite = Image.alpha_composite(composite, trails_img)
+    else:
+        # No glow, just composite trails on base
+        composite = Image.alpha_composite(base_img, trails_img)
+
+    # -- Step 4: Add timestamp --
+    # Create a small figure just for the text overlay
+    fig = plt.figure(figsize=(width/100, height/100), dpi=100)
+    ax = fig.add_axes([0,0,1,1])
+    ax.set_facecolor('none')
+    fig.patch.set_alpha(0.0)
+    ax.patch.set_alpha(0.0)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
     ts_text = ft.strftime("%Y-%m-%d %H:%M:%S UTC")
-    ax.text(0.01, 0.02, ts_text, color="white", fontsize=10, transform=ax.transAxes, zorder=10)
+    ax.text(0.01, 0.02, ts_text, color="white", fontsize=10, transform=ax.transAxes)
+    
+    text_img = _fig_to_pil(fig)
+    plt.close(fig)
+    
+    # Resize text overlay if needed
+    if text_img.size != composite.size:
+        text_img = text_img.resize(composite.size, Image.LANCZOS)
+    
+    final_img = Image.alpha_composite(composite, text_img)
 
+    # -- Step 5: Save final frame --
     fname = os.path.join(outdir, f"frame_{i:05d}.png")
     os.makedirs(outdir, exist_ok=True)
-    fig.savefig(fname, dpi=100, facecolor=fig.get_facecolor(), bbox_inches='tight', pad_inches=0)
+    final_img.save(fname, 'PNG')
     save_frame_even_size(fname)
-    plt.close(fig)
 
 def render_frames_parallel(
     df,
