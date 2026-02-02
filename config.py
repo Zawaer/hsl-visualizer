@@ -27,14 +27,14 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 1,
+    "duration_sec": 2,
     "width_px": 3840,
     "height_px": 3840,
     "trail_seconds": 3600,
     "trail_width": 4,  # Trail line width in pixels
     "trail_glow": True,  # Enable glow effect around trails?
-    "trail_glow_blur_radius": 30,  # Gaussian blur radius in pixels (higher = wider glow)
-    "trail_glow_intensity": 5.0,  # Glow brightness multiplier (1.0 = same as trail, 2.0 = 2x brighter)
+    "trail_glow_blur_radius": 20,  # Gaussian blur radius in pixels (higher = wider glow)
+    "trail_glow_intensity": 8.0,  # Glow brightness multiplier (1.0 = same as trail, 2.0 = 2x brighter)
     "bg_color": "#0a0a0f",
     "point_size": 16.0,
     "num_workers": max(1, cpu_count() - 1),  # Leave 1 core free for system responsiveness

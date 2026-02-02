@@ -2,6 +2,8 @@
 
 A tool to create animated videos of Helsinki (HSL) public transport vehicles with fading trails overlaid on a map background.
 
+**Inspired by:** [Pathfinding Simulation](https://www.youtube.com/watch?v=CgW0HPHqFE8) — the glowing paths on dark maps create a cool visual effect.
+
 ## What it does
 
 1. **Fetcher** (`fetcher.py`): Polls the HSL GTFS-RT API every 5 seconds to continuously log vehicle positions (buses, trams, metro) to CSV.
