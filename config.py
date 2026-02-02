@@ -27,7 +27,7 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 2,
+    "duration_sec": 3,
     "width_px": 2160,
     "height_px": 2160,
     "trail_seconds": 300,
