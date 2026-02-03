@@ -19,7 +19,7 @@ FETCHER = {
 # ============================================================================
 # RENDERER CONFIGURATION
 # ============================================================================
-#test
+
 RENDERER = {
     # ========== Input/Output ==========
     "input_path": "data",  # CSV file or directory with CSVs

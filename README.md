@@ -19,12 +19,6 @@ A tool to create animated videos of Helsinki (HSL) public transport vehicles wit
 - Optional background map tiles (CartoDB, OpenStreetMap) with auto-zoom.
 - Parallel rendering for speed (~10 fps on M3 MacBook Air).
 
-## Setup
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Usage
 
 Edit the `CONFIG` dict at the top of `renderer.py` to set:
