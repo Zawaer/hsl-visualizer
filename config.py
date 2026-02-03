@@ -27,10 +27,10 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 1,
+    "duration_sec": 3,
     "width_px": 2160,
     "height_px": 2160,
-    "trail_seconds": 300,
+    "trail_seconds": 180,
     "trail_width": 4,  # Trail line width in pixels
     "color_by_vehicle_type": True,  # Color trails by vehicle type (bus, tram, metro) instead of unique per vehicle
     "gtfs_routes_path": "routes.txt",  # Path to GTFS routes.txt for accurate vehicle type detection
