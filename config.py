@@ -33,7 +33,7 @@ RENDERER = {
     "trail_seconds": 300,
     "trail_width": 4,  # Trail line width in pixels
     "color_by_vehicle_type": True,  # Color trails by vehicle type (bus, tram, metro) instead of unique per vehicle
-    "gtfs_routes_path": "hsl/routes.txt",  # Path to GTFS routes.txt for accurate vehicle type detection
+    "gtfs_routes_path": "routes.txt",  # Path to GTFS routes.txt for accurate vehicle type detection
     "vehicle_type_colors": {
         "bus": (0.0, 140/255, 230/255),            # Regular bus
         "trunk": (202/255, 63/255, 0),             # Trunk/express bus
