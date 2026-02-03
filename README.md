@@ -4,7 +4,7 @@ A tool to create animated videos of Helsinki (HSL) public transport vehicles wit
 
 **Inspired by:** [Pathfinding Simulation](https://www.youtube.com/watch?v=CgW0HPHqFE8) — the glowing paths on dark maps create a cool visual effect.
 
-<img width="1269" height="900" alt="Screenshot 2026-02-02 at 3 12 19" src="https://github.com/user-attachments/assets/ff273210-0418-43d2-9694-1f4a86f98999" />
+<img width="1266" height="897" alt="Screenshot 2026-02-03 at 21 43 20" src="https://github.com/user-attachments/assets/f0801f2e-3e4d-41db-b708-8b219ffde7a1" />
 
 ## What it does
 
