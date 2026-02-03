@@ -1,9 +1,0 @@
-numpy
-pandas
-matplotlib
-tqdm
-pillow
-requests
-urllib3<2
-contextily
-pyproj

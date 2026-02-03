@@ -35,7 +35,6 @@ CSV_COLUMNS = [
     "current_status",
     "occupancy_status",
     "trip_start_time",
-    "vehicle_label",
     "raw_timestamp",
 ]
 
@@ -89,7 +88,6 @@ def poll_once(csv_path):
         current_status = getattr(v, "current_status", "")
         occupancy_status = getattr(v, "occupancy_status", "")
         trip_start_time = getattr(v.trip, "start_time", "") if v.trip is not None else ""
-        vehicle_label = getattr(v.vehicle, "label", "") if v.vehicle is not None else ""
         raw_ts = getattr(v, "timestamp", "")
 
         rows.append([
@@ -103,7 +101,6 @@ def poll_once(csv_path):
             current_status,
             occupancy_status,
             trip_start_time,
-            vehicle_label,
             raw_ts
         ])
 

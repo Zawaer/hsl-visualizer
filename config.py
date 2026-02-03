@@ -1,6 +1,6 @@
 import os
 from multiprocessing import cpu_count
-#TEST
+
 # ============================================================================
 # FETCHER CONFIGURATION
 # ============================================================================
@@ -19,7 +19,7 @@ FETCHER = {
 # ============================================================================
 # RENDERER CONFIGURATION
 # ============================================================================
-
+#test
 RENDERER = {
     # ========== Input/Output ==========
     "input_path": "data",  # CSV file or directory with CSVs
@@ -27,19 +27,23 @@ RENDERER = {
     
     # ========== Rendering params ==========
     "fps": 25,
-    "duration_sec": 3,
+    "duration_sec": 1,
     "width_px": 2160,
     "height_px": 2160,
     "trail_seconds": 300,
     "trail_width": 4,  # Trail line width in pixels
     "color_by_vehicle_type": True,  # Color trails by vehicle type (bus, tram, metro) instead of unique per vehicle
+    "gtfs_routes_path": "hsl/routes.txt",  # Path to GTFS routes.txt for accurate vehicle type detection
     "vehicle_type_colors": {
-        "bus": (0.2, 0.6, 1.0),       # Blue
-        "tram": (0.2, 0.9, 0.3),      # Green
-        "metro": (1.0, 0.2, 0.2),     # Red
-        "train": (0.7, 0.2, 0.9),     # Purple
-        "ferry": (0.1, 0.8, 0.8),     # Cyan
-        "other": (1.0, 1.0, 1.0),     # White
+        "bus": (0.0, 140/255, 230/255),            # Regular bus
+        "trunk": (202/255, 63/255, 0),             # Trunk/express bus
+        "local_bus": (0.0, 122/255, 201/255),      # Local bus (same as bus)
+        "tram": (2/255, 129/255, 81/255),          # Tram
+        "express_tram": (2/255, 129/255, 81/255),  # Express tram (same as tram)
+        "metro": (255/255, 0/255, 0),              # Metro
+        "train": (164/255, 61/255, 184/255),       # Commuter train
+        "ferry": (0, 122/255, 151/255),            # Ferry
+        "other": (1.0, 1.0, 1.0),                  # Any other vehicle type (although there shouldn't be any)
     },
     "trail_glow": True,  # Enable glow effect around trails?
     "trail_glow_blur_radius": 20,  # Gaussian blur radius in pixels (higher = wider glow)

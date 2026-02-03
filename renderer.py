@@ -275,27 +275,81 @@ def _load_basemap_cached(npz_path: str):
     _BASEMAP_CACHE[npz_path] = (img, extent)
     return img, extent
 
-def get_vehicle_type_from_route(route_id: str) -> str:
-    """Determine vehicle type from HSL route_id prefix.
+# GTFS route_type to vehicle type mapping
+# See: https://gtfs.org/schedule/reference/#routestxt (extended route types)
+GTFS_ROUTE_TYPE_MAP = {
+    0: "tram",           # Tram, Streetcar, Light rail
+    1: "metro",          # Subway, Metro
+    2: "train",          # Rail (long-distance)
+    3: "bus",            # Bus
+    4: "ferry",          # Ferry
+    109: "train",        # Suburban Railway (commuter trains like D, I, K, etc.)
+    700: "bus",          # Bus (generic)
+    701: "bus",          # Regional Bus
+    702: "trunk",        # Express Bus / Trunk route
+    704: "local_bus",    # Local Bus
+    900: "express_tram", # Tram Service (express/suburban)
+}
+
+# Cache for GTFS routes lookup
+_GTFS_ROUTES_CACHE = None
+
+def load_gtfs_routes():
+    """Load GTFS routes.txt and create route_id -> route_type mapping."""
+    global _GTFS_ROUTES_CACHE
+    if _GTFS_ROUTES_CACHE is not None:
+        return _GTFS_ROUTES_CACHE
     
-    HSL route_id prefixes:
-    - 1xxx, 2xxx = Bus (Helsinki area)
-    - 3xxx = Tram (except 31M)
-    - 31M1, 31M2 = Metro
-    - 4xxx = Commuter train
-    - 7xxx = Ferry
+    gtfs_path = CONFIG.get("gtfs_routes_path", "hsl/routes.txt")
+    if not os.path.exists(gtfs_path):
+        print(f"Warning: GTFS routes file not found at {gtfs_path}, falling back to prefix detection")
+        _GTFS_ROUTES_CACHE = {}
+        return _GTFS_ROUTES_CACHE
+    
+    try:
+        routes_df = pd.read_csv(gtfs_path)
+        _GTFS_ROUTES_CACHE = dict(zip(routes_df["route_id"].astype(str), routes_df["route_type"]))
+        print(f"Loaded {len(_GTFS_ROUTES_CACHE)} routes from GTFS")
+    except Exception as e:
+        print(f"Warning: Failed to load GTFS routes: {e}")
+        _GTFS_ROUTES_CACHE = {}
+    
+    return _GTFS_ROUTES_CACHE
+
+def get_vehicle_type_from_route(route_id: str) -> str:
+    """Determine vehicle type from HSL route_id using GTFS routes.txt.
+    
+    Uses the route_type field from GTFS which accurately identifies:
+    - 0: Tram
+    - 1: Metro  
+    - 4: Ferry
+    - 109: Commuter train (D, I, K, etc.)
+    - 700: Bus (generic)
+    - 701: Regional bus
+    - 702: Trunk/Express bus
+    - 704: Local bus
+    - 900: Express tram
     """
     if not route_id:
         return "other"
     
-    route_str = str(route_id).strip().upper()
+    route_str = str(route_id).strip()
+    routes_lookup = load_gtfs_routes()
+    
+    # Try exact match first
+    if route_str in routes_lookup:
+        route_type = routes_lookup[route_str]
+        return GTFS_ROUTE_TYPE_MAP.get(route_type, "other")
+    
+    # Fallback to prefix-based detection if GTFS lookup fails
+    route_upper = route_str.upper()
     
     # Metro check first (31M1, 31M2)
-    if route_str.startswith("31M"):
+    if route_upper.startswith("31M"):
         return "metro"
     
     # Get first digit
-    first_char = route_str[0] if route_str else ""
+    first_char = route_upper[0] if route_upper else ""
     
     if first_char == "3":
         return "tram"
