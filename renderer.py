@@ -70,6 +70,14 @@ def encode_video_ffmpeg(frames_dir: str, fps: int, output_path: str, crf: int = 
 def load_data(input_path):
     if os.path.isdir(input_path):
         files = sorted([os.path.join(input_path,f) for f in os.listdir(input_path) if f.endswith(".csv")])
+        if len(files) == 0:
+            raise RuntimeError(f"No CSV files found in directory: {input_path}")
+        if len(files) > 1:
+            raise RuntimeError(
+                f"Multiple CSV files found in {input_path}. Found {len(files)} files:\n" +
+                "\n".join([f"  - {os.path.basename(f)}" for f in files]) +
+                "\n\nPlease keep only one CSV file in the data folder."
+            )
     else:
         files = [input_path]
     dfs = []
@@ -274,6 +282,56 @@ def _load_basemap_cached(npz_path: str):
     extent = data["extent"].astype(float)
     _BASEMAP_CACHE[npz_path] = (img, extent)
     return img, extent
+
+def _precompute_cumulative_distances(df, frame_times):
+    """Precompute total cumulative distance (km) at each frame timestamp.
+
+    Uses the haversine formula on original lat/lon coordinates.
+    Filters out unrealistic GPS jumps (> 5 km between consecutive points).
+    """
+    all_times = []
+    all_dists = []
+    R = 6371.0  # Earth radius in km
+
+    for vid in df["vehicle_id"].unique():
+        vdf = df[df["vehicle_id"] == vid].sort_values("timestamp_fetch_utc")
+        lats = vdf["latitude"].to_numpy()
+        lons = vdf["longitude"].to_numpy()
+        times = vdf["timestamp_fetch_utc"].to_numpy()
+
+        if len(lats) < 2:
+            continue
+
+        dlat = np.radians(lats[1:] - lats[:-1])
+        dlon = np.radians(lons[1:] - lons[:-1])
+        a = (
+            np.sin(dlat / 2) ** 2
+            + np.cos(np.radians(lats[:-1])) * np.cos(np.radians(lats[1:])) * np.sin(dlon / 2) ** 2
+        )
+        dists = R * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+
+        # Filter out GPS jumps > 5 km between consecutive points
+        mask = dists < 5.0
+        all_times.append(times[1:][mask])
+        all_dists.append(dists[mask])
+
+    if not all_times:
+        return np.zeros(len(frame_times))
+
+    all_times = np.concatenate(all_times)
+    all_dists = np.concatenate(all_dists)
+    order = np.argsort(all_times)
+    all_times = all_times[order]
+    cum_dist = np.cumsum(all_dists[order])
+
+    ft_np = frame_times.to_numpy() if hasattr(frame_times, "to_numpy") else np.array(frame_times)
+    indices = np.searchsorted(all_times, ft_np, side="right")
+    result = np.zeros(len(frame_times))
+    valid = indices > 0
+    result[valid] = cum_dist[indices[valid] - 1]
+
+    return result
+
 
 # GTFS route_type to vehicle type mapping
 # See: https://gtfs.org/schedule/reference/#routestxt (extended route types)
@@ -490,6 +548,7 @@ def render_single_frame(args):
         basemap_npz,
         basemap_alpha,
         basemap_interpolation,
+        total_distance_km,
     ) = args
 
     # -- Step 1: Create base layer (background + basemap) --
@@ -581,6 +640,8 @@ def render_single_frame(args):
     ax.axis('off')
     ts_text = ft.strftime("%Y-%m-%d %H:%M:%S UTC")
     ax.text(0.01, 0.02, ts_text, color="white", fontsize=10, transform=ax.transAxes)
+    dist_text = f"Total distance: {total_distance_km:,.0f} km"
+    ax.text(0.99, 0.02, dist_text, color="white", fontsize=10, transform=ax.transAxes, ha="right")
     
     text_img = _fig_to_pil(fig)
     plt.close(fig)
@@ -704,6 +765,11 @@ def render_frames_parallel(
 
     vehicle_list = list(trails.keys())
 
+    # Precompute cumulative distance (km) for each frame
+    print("Precomputing cumulative distances...")
+    cum_distances = _precompute_cumulative_distances(df, frame_times)
+    print(f"Total distance across all vehicles: {cum_distances[-1]:,.0f} km")
+
     # Prepare args for all frames
     args_list = [(
         i,
@@ -724,6 +790,7 @@ def render_frames_parallel(
         basemap_npz,
         basemap_alpha,
         basemap_interpolation,
+        cum_distances[i],
     )
                  for i, ft in enumerate(frame_times)]
 
