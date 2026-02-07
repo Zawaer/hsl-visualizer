@@ -1,0 +1,9 @@
+requests
+gtfs-realtime-bindings
+pandas
+numpy
+matplotlib
+Pillow
+tqdm
+contextily
+pyproj
