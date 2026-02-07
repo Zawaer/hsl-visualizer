@@ -4,6 +4,8 @@ import signal
 import time
 import shutil
 import subprocess
+import platform
+import threading
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -248,26 +250,56 @@ def _auto_basemap_zoom_for_extent(xmin: float, xmax: float, ymin: float, ymax: f
 
 
 def _run_with_timeout(seconds: int, fn, *args, **kwargs):
-    """Run fn with a hard timeout (Unix only). Returns (ok, result_or_exc)."""
+    """Run fn with a timeout. Returns (ok, result_or_exc).
+    
+    On Unix: uses signal.SIGALRM for hard timeout.
+    On Windows: uses threading for soft timeout (best effort).
+    """
     if seconds <= 0:
         try:
             return True, fn(*args, **kwargs)
         except Exception as e:
             return False, e
 
-    def _handler(signum, frame):
-        raise TimeoutError(f"Timed out after {seconds}s")
+    # Unix-like systems: use signal.SIGALRM
+    if platform.system() != "Windows":
+        def _handler(signum, frame):
+            raise TimeoutError(f"Timed out after {seconds}s")
 
-    old_handler = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, _handler)
-    signal.alarm(int(seconds))
-    try:
-        return True, fn(*args, **kwargs)
-    except Exception as e:
-        return False, e
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+        old_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, _handler)
+        signal.alarm(int(seconds))
+        try:
+            return True, fn(*args, **kwargs)
+        except Exception as e:
+            return False, e
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    
+    # Windows: use threading for soft timeout
+    else:
+        result = [None]
+        exception = [None]
+        
+        def _target():
+            try:
+                result[0] = fn(*args, **kwargs)
+            except Exception as e:
+                exception[0] = e
+        
+        thread = threading.Thread(target=_target, daemon=True)
+        thread.start()
+        thread.join(timeout=seconds)
+        
+        if thread.is_alive():
+            # Thread is still running - we can't forcefully kill it on Windows
+            return False, TimeoutError(f"Timed out after {seconds}s (thread still running)")
+        
+        if exception[0] is not None:
+            return False, exception[0]
+        
+        return True, result[0]
 
 
 _BASEMAP_CACHE = {}
